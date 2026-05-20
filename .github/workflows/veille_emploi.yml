@@ -1,0 +1,27 @@
+name: Veille Emploi — Analyse Sensorielle Occitanie
+
+on:
+  schedule:
+    # Tous les jours à 7h00 heure de Paris (6h UTC en hiver, 5h UTC en été)
+    - cron: "0 6 * * *"
+  workflow_dispatch: # déclenchement manuel possible
+
+jobs:
+  recherche:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installer les dépendances
+        run: pip install requests beautifulsoup4 lxml
+
+      - name: Lancer la recherche et envoyer le mail
+        env:
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          FT_CLIENT_ID:       ${{ secrets.FT_CLIENT_ID }}
+          FT_CLIENT_SECRET:   ${{ secrets.FT_CLIENT_SECRET }}
+        run: python recherche_emploi.py

@@ -1,0 +1,9 @@
+# Ne jamais committer les credentials
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Logs
+*.log
