@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
 """
 Veille quotidienne - Offres d'emploi analyse sensorielle en Occitanie.
-Envoie un récapitulatif par email via Gmail SMTP.
+Crée un brouillon Gmail via l'API Google.
 
 Configuration requise (variables d'environnement) :
-  GMAIL_APP_PASSWORD  : Mot de passe d'application Gmail (16 caractères)
-  FT_CLIENT_ID        : (optionnel) Client ID API France Travail
-  FT_CLIENT_SECRET    : (optionnel) Client Secret API France Travail
+  GMAIL_CLIENT_ID      : Client ID OAuth Google Cloud
+  GMAIL_CLIENT_SECRET  : Client Secret OAuth Google Cloud
+  GMAIL_REFRESH_TOKEN  : Refresh token (obtenu une fois via get_token.py)
+  FT_CLIENT_ID         : (optionnel) Client ID API France Travail
+  FT_CLIENT_SECRET     : (optionnel) Client Secret API France Travail
 """
 
 import os
+import base64
 import time
-import smtplib
 import requests
 import logging
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from bs4 import BeautifulSoup
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,9 +34,12 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── Configuration ────────────────────────────────────────────────────────────
-GMAIL_USER        = "emilie.aline@gmail.com"
-TO_EMAIL          = "emilie.aline@gmail.com"
-GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
+GMAIL_USER = "emilie.aline@gmail.com"
+TO_EMAIL   = "emilie.aline@gmail.com"
+
+GMAIL_CLIENT_ID     = os.environ.get("GMAIL_CLIENT_ID", "")
+GMAIL_CLIENT_SECRET = os.environ.get("GMAIL_CLIENT_SECRET", "")
+GMAIL_REFRESH_TOKEN = os.environ.get("GMAIL_REFRESH_TOKEN", "")
 
 FT_CLIENT_ID     = os.environ.get("FT_CLIENT_ID", "")
 FT_CLIENT_SECRET = os.environ.get("FT_CLIENT_SECRET", "")
@@ -332,10 +339,19 @@ def build_html(offers: list, date_str: str) -> str:
 </body></html>"""
 
 
-def send_email(html: str, subject: str) -> None:
-    if not GMAIL_APP_PASSWORD:
-        log.error("GMAIL_APP_PASSWORD non défini — email non envoyé.")
+def create_draft(html: str, subject: str) -> None:
+    if not GMAIL_REFRESH_TOKEN:
+        log.error("GMAIL_REFRESH_TOKEN non défini — brouillon non créé.")
         return
+
+    creds = Credentials(
+        token=None,
+        refresh_token=GMAIL_REFRESH_TOKEN,
+        client_id=GMAIL_CLIENT_ID,
+        client_secret=GMAIL_CLIENT_SECRET,
+        token_uri="https://oauth2.googleapis.com/token",
+    )
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -343,10 +359,12 @@ def send_email(html: str, subject: str) -> None:
     msg["To"]      = TO_EMAIL
     msg.attach(MIMEText(html, "html", "utf-8"))
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-        smtp.sendmail(GMAIL_USER, TO_EMAIL, msg.as_string())
-    log.info("✓ Email envoyé à %s", TO_EMAIL)
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    service.users().drafts().create(
+        userId="me",
+        body={"message": {"raw": raw}}
+    ).execute()
+    log.info("✓ Brouillon créé dans Gmail")
 
 
 # ── Point d'entrée ───────────────────────────────────────────────────────────
@@ -384,9 +402,9 @@ def main() -> None:
     )
     log.info("✓ %d offre(s) après filtrage", len(filtered))
 
-    # Envoi email
+    # Création du brouillon Gmail
     html = build_html(filtered, date_str)
-    send_email(html, subject)
+    create_draft(html, subject)
 
     log.info("=== Fin ===")
 
