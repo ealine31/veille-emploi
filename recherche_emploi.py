@@ -41,6 +41,10 @@ KEYWORDS = [
     "dégustation",
     "degustation",
     "consumer",
+    "consommateur",
+    "datavisualization",
+    "visualisation de données",
+    "data analyst"
 ]
 
 OCCITANIE_TERMS = [
