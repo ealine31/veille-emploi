@@ -44,7 +44,22 @@ KEYWORDS = [
     "dégustation",
     "degustation",
     "consumer",
+    "consommateur",
+    "datavisualization",
+    "visualisation de données",
+    "data analyst",
 ]
+
+# Termes envoyés aux moteurs de recherche : on dédoublonne les variantes
+# (accentuées/non-accentuées) en gardant uniquement la forme accentuée.
+_seen_normalized = set()
+SEARCH_TERMS = []
+for _kw in KEYWORDS:
+    import unicodedata
+    _norm = unicodedata.normalize("NFD", _kw).encode("ascii", "ignore").decode()
+    if _norm not in _seen_normalized:
+        _seen_normalized.add(_norm)
+        SEARCH_TERMS.append(_kw)
 
 OCCITANIE_TERMS = [
     "toulouse", "montpellier", "nîmes", "nimes", "perpignan",
@@ -132,11 +147,7 @@ def get_ft_token() -> str | None:
 
 def search_france_travail_api(token: str) -> list:
     offers = []
-    search_terms = [
-        "analyse sensorielle", "évaluation sensorielle",
-        "organoleptique", "dégustation", "consumer sensoriel",
-    ]
-    for term in search_terms:
+    for term in SEARCH_TERMS:
         try:
             r = requests.get(
                 "https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search",
@@ -164,8 +175,7 @@ def search_france_travail_api(token: str) -> list:
 
 def search_france_travail_scraping() -> list:
     offers = []
-    terms = ["analyse+sensorielle", "organoleptique", "d%C3%A9gustation", "%C3%A9valuation+sensorielle"]
-    for term in terms:
+    for term in SEARCH_TERMS:
         url = f"https://candidat.francetravail.fr/offres/recherche?motsCles={term}&lieux=76R&tri=0"
         r = safe_get(url)
         if not r:
@@ -195,8 +205,7 @@ def search_france_travail_scraping() -> list:
 
 def search_hellowork() -> list:
     offers = []
-    terms = ["analyse+sensorielle", "organoleptique", "%C3%A9valuation+sensorielle", "d%C3%A9gustation"]
-    for term in terms:
+    for term in SEARCH_TERMS:
         url = f"https://www.hellowork.com/fr-fr/emploi/recherche.html?k={term}&l=Occitanie&s=created_desc"
         r = safe_get(url)
         if not r:
@@ -228,8 +237,7 @@ def search_hellowork() -> list:
 def search_indeed() -> list:
     """Indeed via flux RSS — plus fiable que le scraping HTML."""
     offers = []
-    terms = ["analyse sensorielle", "évaluation sensorielle", "organoleptique", "dégustation", "consumer"]
-    for term in terms:
+    for term in SEARCH_TERMS:
         r = safe_get("https://fr.indeed.com/rss", params={
             "q": term, "l": "Occitanie", "sort": "date", "fromage": "1"
         })
@@ -264,8 +272,7 @@ def search_indeed() -> list:
 def search_linkedin() -> list:
     """LinkedIn — page publique de recherche d'offres."""
     offers = []
-    terms = ["analyse sensorielle", "organoleptique", "dégustation", "évaluation sensorielle"]
-    for term in terms:
+    for term in SEARCH_TERMS:
         r = safe_get(
             "https://www.linkedin.com/jobs/search/",
             params={"keywords": term, "location": "Occitanie, France", "sortBy": "DD", "f_TPR": "r86400"}
@@ -299,12 +306,7 @@ def search_linkedin() -> list:
 def search_google_jobs() -> list:
     """Google Jobs — résultats de recherche avec filtre emploi."""
     offers = []
-    terms = [
-        "analyse sensorielle emploi Occitanie",
-        "organoleptique recrutement Occitanie",
-        "évaluation sensorielle poste Occitanie",
-        "dégustation emploi Occitanie",
-    ]
+    terms = [f"{kw} emploi Occitanie" for kw in SEARCH_TERMS]
     headers = {
         **HEADERS,
         "User-Agent": (
@@ -351,8 +353,7 @@ def search_google_jobs() -> list:
 
 def search_meteojob() -> list:
     offers = []
-    terms = ["analyse sensorielle", "organoleptique", "dégustation", "évaluation sensorielle"]
-    for term in terms:
+    for term in SEARCH_TERMS:
         r = safe_get("https://www.meteojob.com/jobsearch/search", params={"what": term, "where": "Occitanie"})
         if not r:
             continue
