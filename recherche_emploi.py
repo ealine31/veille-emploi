@@ -88,7 +88,17 @@ SESSION.headers.update(HEADERS)
 
 # ── Utilitaires ──────────────────────────────────────────────────────────────
 
-def deduplicate(offers: list) -> list:
+EXCLUDE_TERMS = [
+    "stage", "stagiaire", "alternance", "alternant", "apprentissage", "apprenti",
+]
+
+
+def is_excluded(offer: dict) -> bool:
+    text = (offer.get("title", "") + " " + offer.get("description", "")).lower()
+    return any(term in text for term in EXCLUDE_TERMS)
+
+
+
     seen, unique = set(), []
     for o in offers:
         key = o.get("url") or f"{o.get('title','')}_{o.get('company','')}"
@@ -473,7 +483,7 @@ def main() -> None:
     all_offers.extend(search_meteojob())
 
     filtered = deduplicate(
-        [o for o in all_offers if contains_keyword(o) and in_occitanie(o)]
+        [o for o in all_offers if contains_keyword(o) and in_occitanie(o) and not is_excluded(o)]
     )
     log.info("✓ %d offre(s) après filtrage", len(filtered))
 
