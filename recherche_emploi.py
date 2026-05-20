@@ -12,9 +12,12 @@ Configuration requise (variables d'environnement) :
 """
 
 import os
+import re
 import time
 import requests
 import logging
+import xml.etree.ElementTree as ET
+from html import unescape
 from datetime import datetime
 from bs4 import BeautifulSoup
 
@@ -41,10 +44,6 @@ KEYWORDS = [
     "dégustation",
     "degustation",
     "consumer",
-    "consommateur",
-    "datavisualization",
-    "visualisation de données",
-    "data analyst"
 ]
 
 OCCITANIE_TERMS = [
@@ -226,6 +225,130 @@ def search_hellowork() -> list:
     return offers
 
 
+def search_indeed() -> list:
+    """Indeed via flux RSS — plus fiable que le scraping HTML."""
+    offers = []
+    terms = ["analyse sensorielle", "évaluation sensorielle", "organoleptique", "dégustation", "consumer"]
+    for term in terms:
+        r = safe_get("https://fr.indeed.com/rss", params={
+            "q": term, "l": "Occitanie", "sort": "date", "fromage": "1"
+        })
+        if not r:
+            continue
+        try:
+            root = ET.fromstring(r.content)
+            for item in root.findall(".//item"):
+                title    = item.findtext("title", "").strip()
+                link     = item.findtext("link", "").strip()
+                desc_raw = item.findtext("description", "")
+                desc     = unescape(re.sub(r"<[^>]+>", " ", desc_raw)).strip()[:400]
+                # L'entreprise est souvent dans la balise <source> ou dans le titre "Poste - Entreprise"
+                source_el = item.find("source")
+                company  = source_el.text.strip() if source_el is not None else "Non précisé"
+                if title:
+                    offers.append({
+                        "title":       title,
+                        "company":     company,
+                        "location":    "Occitanie",
+                        "date":        datetime.today().strftime("%Y-%m-%d"),
+                        "url":         link,
+                        "description": desc,
+                        "source":      "Indeed",
+                    })
+        except ET.ParseError as e:
+            log.debug("Erreur RSS Indeed : %s", e)
+        time.sleep(1.5)
+    return offers
+
+
+def search_linkedin() -> list:
+    """LinkedIn — page publique de recherche d'offres."""
+    offers = []
+    terms = ["analyse sensorielle", "organoleptique", "dégustation", "évaluation sensorielle"]
+    for term in terms:
+        r = safe_get(
+            "https://www.linkedin.com/jobs/search/",
+            params={"keywords": term, "location": "Occitanie, France", "sortBy": "DD", "f_TPR": "r86400"}
+        )
+        if not r:
+            continue
+        soup = BeautifulSoup(r.text, "lxml")
+        for card in soup.select("li[class*='result'], .job-search-card, [class*='job-card']"):
+            title_el   = card.select_one("h3, h4, [class*='title']")
+            company_el = card.select_one("[class*='company'], h4")
+            loc_el     = card.select_one("[class*='location'], [class*='city']")
+            link_el    = card.select_one("a[href]")
+            if not title_el:
+                continue
+            href = link_el["href"] if link_el else ""
+            if href and "?" in href:
+                href = href.split("?")[0]
+            offers.append({
+                "title":       title_el.get_text(strip=True),
+                "company":     company_el.get_text(strip=True) if company_el else "Non précisé",
+                "location":    loc_el.get_text(strip=True) if loc_el else "Occitanie",
+                "date":        datetime.today().strftime("%Y-%m-%d"),
+                "url":         href,
+                "description": card.get_text(" ", strip=True)[:400],
+                "source":      "LinkedIn",
+            })
+        time.sleep(2)
+    return offers
+
+
+def search_google_jobs() -> list:
+    """Google Jobs — résultats de recherche avec filtre emploi."""
+    offers = []
+    terms = [
+        "analyse sensorielle emploi Occitanie",
+        "organoleptique recrutement Occitanie",
+        "évaluation sensorielle poste Occitanie",
+        "dégustation emploi Occitanie",
+    ]
+    headers = {
+        **HEADERS,
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+    }
+    for term in terms:
+        try:
+            r = SESSION.get(
+                "https://www.google.com/search",
+                params={"q": term, "hl": "fr", "gl": "fr", "ibp": "htl;jobs", "num": "20"},
+                headers=headers,
+                timeout=15,
+            )
+            if r.status_code != 200:
+                continue
+            soup = BeautifulSoup(r.text, "lxml")
+            for card in soup.select("[class*='job'], [data-hveid], li[data-cid]"):
+                title_el   = card.select_one("h3, h4, [class*='title'], [role='heading']")
+                company_el = card.select_one("[class*='company'], [class*='employer']")
+                loc_el     = card.select_one("[class*='location'], [class*='city']")
+                link_el    = card.select_one("a[href]")
+                if not title_el:
+                    continue
+                href = link_el["href"] if link_el else ""
+                if href.startswith("/url?q="):
+                    href = href.split("/url?q=")[1].split("&")[0]
+                offers.append({
+                    "title":       title_el.get_text(strip=True),
+                    "company":     company_el.get_text(strip=True) if company_el else "Non précisé",
+                    "location":    loc_el.get_text(strip=True) if loc_el else "Occitanie",
+                    "date":        datetime.today().strftime("%Y-%m-%d"),
+                    "url":         href,
+                    "description": card.get_text(" ", strip=True)[:400],
+                    "source":      "Google Jobs",
+                })
+        except Exception as e:
+            log.debug("Erreur Google Jobs '%s' : %s", term, e)
+        time.sleep(2)
+    return offers
+
+
 def search_meteojob() -> list:
     offers = []
     terms = ["analyse sensorielle", "organoleptique", "dégustation", "évaluation sensorielle"]
@@ -332,6 +455,15 @@ def main() -> None:
     else:
         log.info("  Mode scraping (pas de token API)")
         all_offers.extend(search_france_travail_scraping())
+
+    log.info("→ Indeed…")
+    all_offers.extend(search_indeed())
+
+    log.info("→ LinkedIn…")
+    all_offers.extend(search_linkedin())
+
+    log.info("→ Google Jobs…")
+    all_offers.extend(search_google_jobs())
 
     log.info("→ HelloWork…")
     all_offers.extend(search_hellowork())
