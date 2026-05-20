@@ -1,45 +1,32 @@
 #!/usr/bin/env python3
 """
 Veille quotidienne - Offres d'emploi analyse sensorielle en Occitanie.
-Crée un brouillon Gmail via l'API Google.
+Crée une GitHub Issue avec les offres trouvées.
+GitHub envoie automatiquement un email de notification.
 
 Configuration requise (variables d'environnement) :
-  GMAIL_CLIENT_ID      : Client ID OAuth Google Cloud
-  GMAIL_CLIENT_SECRET  : Client Secret OAuth Google Cloud
-  GMAIL_REFRESH_TOKEN  : Refresh token (obtenu une fois via get_token.py)
-  FT_CLIENT_ID         : (optionnel) Client ID API France Travail
-  FT_CLIENT_SECRET     : (optionnel) Client Secret API France Travail
+  GITHUB_TOKEN      : fourni automatiquement par GitHub Actions
+  GITHUB_REPOSITORY : fourni automatiquement par GitHub Actions (ex: ealine31/veille-emploi)
+  FT_CLIENT_ID      : (optionnel) Client ID API France Travail
+  FT_CLIENT_SECRET  : (optionnel) Client Secret API France Travail
 """
 
 import os
-import base64
 import time
 import requests
 import logging
 from datetime import datetime
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from bs4 import BeautifulSoup
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
-    handlers=[
-        logging.FileHandler("/home/user/veille_emploi/veille.log"),
-        logging.StreamHandler()
-    ]
 )
 log = logging.getLogger(__name__)
 
 # ── Configuration ────────────────────────────────────────────────────────────
-GMAIL_USER = "emilie.aline@gmail.com"
-TO_EMAIL   = "emilie.aline@gmail.com"
-
-GMAIL_CLIENT_ID     = os.environ.get("GMAIL_CLIENT_ID", "")
-GMAIL_CLIENT_SECRET = os.environ.get("GMAIL_CLIENT_SECRET", "")
-GMAIL_REFRESH_TOKEN = os.environ.get("GMAIL_REFRESH_TOKEN", "")
+GITHUB_TOKEN      = os.environ.get("GITHUB_TOKEN", "")
+GITHUB_REPOSITORY = os.environ.get("GITHUB_REPOSITORY", "ealine31/veille-emploi")
 
 FT_CLIENT_ID     = os.environ.get("FT_CLIENT_ID", "")
 FT_CLIENT_SECRET = os.environ.get("FT_CLIENT_SECRET", "")
@@ -94,16 +81,14 @@ def deduplicate(offers: list) -> list:
 
 
 def contains_keyword(offer: dict) -> bool:
-    text = (
-        offer.get("title", "") + " " + offer.get("description", "")
-    ).lower()
+    text = (offer.get("title", "") + " " + offer.get("description", "")).lower()
     return any(kw in text for kw in KEYWORDS)
 
 
 def in_occitanie(offer: dict) -> bool:
     loc = offer.get("location", "").lower()
     if not loc:
-        return True  # pas de localisation précisée → on garde
+        return True
     return any(t in loc for t in OCCITANIE_TERMS)
 
 
@@ -143,7 +128,6 @@ def get_ft_token() -> str | None:
 
 
 def search_france_travail_api(token: str) -> list:
-    """Recherche via l'API officielle France Travail."""
     offers = []
     search_terms = [
         "analyse sensorielle", "évaluation sensorielle",
@@ -176,14 +160,10 @@ def search_france_travail_api(token: str) -> list:
 
 
 def search_france_travail_scraping() -> list:
-    """Fallback scraping France Travail sans token API."""
     offers = []
     terms = ["analyse+sensorielle", "organoleptique", "d%C3%A9gustation", "%C3%A9valuation+sensorielle"]
     for term in terms:
-        url = (
-            f"https://candidat.francetravail.fr/offres/recherche"
-            f"?motsCles={term}&lieux=76R&tri=0"
-        )
+        url = f"https://candidat.francetravail.fr/offres/recherche?motsCles={term}&lieux=76R&tri=0"
         r = safe_get(url)
         if not r:
             continue
@@ -214,10 +194,7 @@ def search_hellowork() -> list:
     offers = []
     terms = ["analyse+sensorielle", "organoleptique", "%C3%A9valuation+sensorielle", "d%C3%A9gustation"]
     for term in terms:
-        url = (
-            f"https://www.hellowork.com/fr-fr/emploi/recherche.html"
-            f"?k={term}&l=Occitanie&s=created_desc"
-        )
+        url = f"https://www.hellowork.com/fr-fr/emploi/recherche.html?k={term}&l=Occitanie&s=created_desc"
         r = safe_get(url)
         if not r:
             continue
@@ -245,13 +222,11 @@ def search_hellowork() -> list:
     return offers
 
 
-def search_regionsjob() -> list:
-    """RegionsJob / Meteojob — plus accessible."""
+def search_meteojob() -> list:
     offers = []
     terms = ["analyse sensorielle", "organoleptique", "dégustation", "évaluation sensorielle"]
     for term in terms:
-        url = "https://www.meteojob.com/jobsearch/search"
-        r = safe_get(url, params={"what": term, "where": "Occitanie"})
+        r = safe_get("https://www.meteojob.com/jobsearch/search", params={"what": term, "where": "Occitanie"})
         if not r:
             continue
         soup = BeautifulSoup(r.text, "lxml")
@@ -278,93 +253,60 @@ def search_regionsjob() -> list:
     return offers
 
 
-# ── Email ────────────────────────────────────────────────────────────────────
+# ── GitHub Issue ─────────────────────────────────────────────────────────────
 
-def build_html(offers: list, date_str: str) -> str:
-    if offers:
-        cards_html = ""
-        for o in offers:
-            kw_found = [kw for kw in KEYWORDS if kw in (o.get("title","") + " " + o.get("description","")).lower()]
-            badge = ", ".join(dict.fromkeys(kw_found))  # dédoublonné, ordre préservé
-            desc = (o.get("description") or "")[:300]
-            cards_html += f"""
-        <div style="border:1px solid #dce1e7;border-radius:10px;padding:16px;
-                    margin:12px 0;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.05);">
-          <div style="font-size:.75em;color:#888;margin-bottom:4px;">{o.get('source','')}</div>
-          <h3 style="margin:0 0 6px;font-size:1.05em;">
-            <a href="{o.get('url','#')}" style="color:#1a73e8;text-decoration:none;">
-              {o.get('title','')}
-            </a>
-          </h3>
-          <p style="margin:4px 0;color:#555;font-size:.9em;">
-            🏢 <strong>{o.get('company','')}</strong>
-            &nbsp;|&nbsp; 📍 {o.get('location','')}
-            &nbsp;|&nbsp; 📅 {o.get('date','')}
-          </p>
-          {f'<p style="margin:4px 0;font-size:.8em;color:#e06c00;">🔑 {badge}</p>' if badge else ''}
-          <p style="margin:8px 0 10px;color:#444;font-size:.88em;">{desc}…</p>
-          <a href="{o.get('url','#')}"
-             style="background:#1a73e8;color:#fff;padding:7px 15px;border-radius:5px;
-                    text-decoration:none;font-size:.85em;">
-            Voir l'offre →
-          </a>
-        </div>"""
-        content = f"<p><strong>{len(offers)} offre(s) trouvée(s)</strong> aujourd'hui :</p>" + cards_html
-    else:
-        content = """
-        <div style="background:#f8f9fa;border-radius:10px;padding:20px;text-align:center;color:#666;">
-          <p style="font-size:1.1em;">Aucune offre trouvée aujourd'hui en Occitanie.</p>
-          <p>Les plateformes seront à nouveau consultées demain.</p>
-        </div>"""
+def build_issue_body(offers: list, date_str: str) -> str:
+    if not offers:
+        return (
+            f"Aucune offre trouvée aujourd'hui ({date_str}) en Occitanie "
+            f"pour les termes surveillés.\n\n"
+            f"**Mots-clés :** analyse sensorielle · évaluation sensorielle · "
+            f"caractérisation sensorielle · organoleptique · dégustations · consumer\n\n"
+            f"**Sources consultées :** France Travail · HelloWork · Meteojob"
+        )
 
-    return f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"></head>
-<body style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:760px;
-             margin:auto;padding:24px;background:#f4f6f9;color:#333;">
-  <div style="background:#fff;border-radius:12px;padding:28px;
-              box-shadow:0 2px 8px rgba(0,0,0,.08);">
-    <h1 style="color:#1a73e8;margin-top:0;font-size:1.4em;border-bottom:2px solid #e8eaed;padding-bottom:12px;">
-      🔬 Veille Emploi — Analyse Sensorielle · Occitanie
-    </h1>
-    <p style="color:#888;margin-top:0;">Rapport du <strong>{date_str}</strong></p>
-    {content}
-    <hr style="border:none;border-top:1px solid #e8eaed;margin:24px 0;">
-    <p style="color:#aaa;font-size:.78em;line-height:1.6;">
-      <strong>Mots-clés surveillés :</strong> analyse sensorielle · évaluation sensorielle ·
-      caractérisation sensorielle · organoleptique · dégustations · consumer<br>
-      <strong>Sources :</strong> France Travail · HelloWork · Meteojob<br>
-      <strong>Région :</strong> Occitanie (tous départements)
-    </p>
-  </div>
-</body></html>"""
+    lines = [f"**{len(offers)} offre(s) trouvée(s)** — {date_str}\n"]
+    for o in offers:
+        kw_found = [kw for kw in KEYWORDS if kw in (o.get("title","") + " " + o.get("description","")).lower()]
+        badge = " · ".join(dict.fromkeys(kw_found))
+        lines.append(
+            f"---\n"
+            f"### [{o.get('title','')}]({o.get('url','#')})\n"
+            f"🏢 **{o.get('company','')}** &nbsp;|&nbsp; "
+            f"📍 {o.get('location','')} &nbsp;|&nbsp; "
+            f"📅 {o.get('date','')} &nbsp;|&nbsp; "
+            f"*{o.get('source','')}*\n\n"
+            + (f"🔑 `{badge}`\n\n" if badge else "")
+            + f"{o.get('description','')[:300]}…\n"
+        )
+
+    lines.append(
+        "\n---\n"
+        "*Mots-clés surveillés : analyse sensorielle · évaluation sensorielle · "
+        "caractérisation sensorielle · organoleptique · dégustations · consumer*\n"
+        "*Sources : France Travail · HelloWork · Meteojob*"
+    )
+    return "\n".join(lines)
 
 
-def create_draft(html: str, subject: str) -> None:
-    if not GMAIL_REFRESH_TOKEN:
-        log.error("GMAIL_REFRESH_TOKEN non défini — brouillon non créé.")
+def create_github_issue(title: str, body: str) -> None:
+    if not GITHUB_TOKEN:
+        log.error("GITHUB_TOKEN non défini.")
         return
 
-    creds = Credentials(
-        token=None,
-        refresh_token=GMAIL_REFRESH_TOKEN,
-        client_id=GMAIL_CLIENT_ID,
-        client_secret=GMAIL_CLIENT_SECRET,
-        token_uri="https://oauth2.googleapis.com/token",
+    r = requests.post(
+        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/issues",
+        headers={
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json",
+        },
+        json={"title": title, "body": body, "labels": ["veille-emploi"]},
+        timeout=15,
     )
-    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"]    = GMAIL_USER
-    msg["To"]      = TO_EMAIL
-    msg.attach(MIMEText(html, "html", "utf-8"))
-
-    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-    service.users().drafts().create(
-        userId="me",
-        body={"message": {"raw": raw}}
-    ).execute()
-    log.info("✓ Brouillon créé dans Gmail")
+    if r.status_code == 201:
+        log.info("✓ Issue créée : %s", r.json().get("html_url"))
+    else:
+        log.error("Erreur création issue : %s %s", r.status_code, r.text[:200])
 
 
 # ── Point d'entrée ───────────────────────────────────────────────────────────
@@ -372,13 +314,12 @@ def create_draft(html: str, subject: str) -> None:
 def main() -> None:
     today    = datetime.today()
     date_str = today.strftime("%d/%m/%Y")
-    subject  = f"[Veille Emploi] Analyse Sensorielle Occitanie — {date_str}"
+    title    = f"🔬 Veille Emploi — Analyse Sensorielle Occitanie · {date_str}"
 
     log.info("=== Démarrage veille emploi %s ===", date_str)
 
     all_offers: list = []
 
-    # 1. France Travail (API si credentials, sinon scraping)
     log.info("→ France Travail…")
     token = get_ft_token()
     if token:
@@ -388,23 +329,19 @@ def main() -> None:
         log.info("  Mode scraping (pas de token API)")
         all_offers.extend(search_france_travail_scraping())
 
-    # 2. HelloWork
     log.info("→ HelloWork…")
     all_offers.extend(search_hellowork())
 
-    # 3. Meteojob
     log.info("→ Meteojob…")
-    all_offers.extend(search_regionsjob())
+    all_offers.extend(search_meteojob())
 
-    # Filtrage et dédoublonnage
     filtered = deduplicate(
         [o for o in all_offers if contains_keyword(o) and in_occitanie(o)]
     )
     log.info("✓ %d offre(s) après filtrage", len(filtered))
 
-    # Création du brouillon Gmail
-    html = build_html(filtered, date_str)
-    create_draft(html, subject)
+    body = build_issue_body(filtered, date_str)
+    create_github_issue(title, body)
 
     log.info("=== Fin ===")
 

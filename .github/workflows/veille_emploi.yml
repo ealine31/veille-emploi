@@ -2,9 +2,12 @@ name: Veille Emploi — Analyse Sensorielle Occitanie
 
 on:
   schedule:
-    # Tous les jours à 7h00 heure de Paris (6h UTC en hiver, 5h UTC en été)
-    - cron: "0 6 * * *"
+    # Tous les jours à 7h00 (5h UTC, heure de Paris en été)
+    - cron: "0 5 * * *"
   workflow_dispatch: # déclenchement manuel possible
+
+permissions:
+  issues: write
 
 jobs:
   recherche:
@@ -17,13 +20,12 @@ jobs:
           python-version: "3.11"
 
       - name: Installer les dépendances
-        run: pip install requests beautifulsoup4 lxml google-auth google-api-python-client
+        run: pip install requests beautifulsoup4 lxml
 
-      - name: Lancer la recherche et créer le brouillon Gmail
+      - name: Lancer la recherche et créer l'issue
         env:
-          GMAIL_CLIENT_ID:     ${{ secrets.GMAIL_CLIENT_ID }}
-          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
-          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
-          FT_CLIENT_ID:        ${{ secrets.FT_CLIENT_ID }}
-          FT_CLIENT_SECRET:    ${{ secrets.FT_CLIENT_SECRET }}
+          GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          FT_CLIENT_ID:      ${{ secrets.FT_CLIENT_ID }}
+          FT_CLIENT_SECRET:  ${{ secrets.FT_CLIENT_SECRET }}
         run: python recherche_emploi.py
