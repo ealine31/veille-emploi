@@ -396,14 +396,16 @@ def search_meteojob() -> list:
 
 # ── GitHub Issue ─────────────────────────────────────────────────────────────
 
+SOURCES = "France Travail · Indeed · LinkedIn · Google Jobs · HelloWork · Meteojob"
+
 def build_issue_body(offers: list, date_str: str) -> str:
+    kw_list = " · ".join(SEARCH_TERMS)
     if not offers:
         return (
             f"Aucune offre trouvée aujourd'hui ({date_str}) en Occitanie "
             f"pour les termes surveillés.\n\n"
-            f"**Mots-clés :** analyse sensorielle · évaluation sensorielle · "
-            f"caractérisation sensorielle · organoleptique · dégustations · consumer\n\n"
-            f"**Sources consultées :** France Travail · HelloWork · Meteojob"
+            f"**Mots-clés :** {kw_list}\n\n"
+            f"**Sources consultées :** {SOURCES}"
         )
 
     lines = [f"**{len(offers)} offre(s) trouvée(s)** — {date_str}\n"]
@@ -422,10 +424,9 @@ def build_issue_body(offers: list, date_str: str) -> str:
         )
 
     lines.append(
-        "\n---\n"
-        "*Mots-clés surveillés : analyse sensorielle · évaluation sensorielle · "
-        "caractérisation sensorielle · organoleptique · dégustations · consumer*\n"
-        "*Sources : France Travail · HelloWork · Meteojob*"
+        f"\n---\n"
+        f"*Mots-clés surveillés : {kw_list}*\n"
+        f"*Sources : {SOURCES}*"
     )
     return "\n".join(lines)
 
