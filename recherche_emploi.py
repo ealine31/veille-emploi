@@ -98,7 +98,7 @@ def is_excluded(offer: dict) -> bool:
     return any(term in text for term in EXCLUDE_TERMS)
 
 
-
+def deduplicate(offers: list) -> list:
     seen, unique = set(), []
     for o in offers:
         key = o.get("url") or f"{o.get('title','')}_{o.get('company','')}"
