@@ -48,6 +48,9 @@ KEYWORDS = [
     "datavisualization",
     "visualisation de données",
     "data analyst",
+    "études qualitatives",
+    "enquête terrain",
+    "étude de marché"
 ]
 
 # Termes envoyés aux moteurs de recherche : on dédoublonne les variantes
