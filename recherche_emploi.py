@@ -81,7 +81,7 @@ OCCITANIE_TERMS = [
     "hautes-pyrenees", "pyrénées-orientales", "pyrenees-orientales",
     "tarn", "tarn-et-garonne", "balma", "labège", "labege",
     "colomiers", "blagnac", "muret", "castres", "alès", "ales",
-    "sète", "sete", "beziers", "béziers", "lunel", "millau", "la réunion", "la réunion"
+    "sète", "sete", "beziers", "béziers", "lunel", "millau", "la réunion", "la reunion"
 ]
 
 HEADERS = {
