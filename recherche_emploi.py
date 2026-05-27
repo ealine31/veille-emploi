@@ -36,6 +36,12 @@ FT_CLIENT_SECRET = os.environ.get("FT_CLIENT_SECRET", "")
 
 KEYWORDS = [
     "analyse sensorielle",
+    "sensory"
+    "sensorielle"
+    'sensoriel",
+    "sensorielles",
+    "sensoriels",
+    "sensorialité",
     "évaluation sensorielle",
     "evaluation sensorielle",
     "caractérisation sensorielle",
