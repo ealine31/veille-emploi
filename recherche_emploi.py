@@ -38,7 +38,7 @@ KEYWORDS = [
     "analyse sensorielle",
     "sensory"
     "sensorielle"
-    'sensoriel",
+    "sensoriel",
     "sensorielles",
     "sensoriels",
     "sensorialité",
