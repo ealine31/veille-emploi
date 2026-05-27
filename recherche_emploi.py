@@ -46,6 +46,7 @@ KEYWORDS = [
     "consumer",
     "consommateur",
     "datavisualization",
+    "dataviz"
     "visualisation de données",
     "data analyst",
     "études qualitatives",
